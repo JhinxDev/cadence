@@ -1,0 +1,26 @@
+services:
+  cadence:
+    build:
+      context: ./server
+      dockerfile: Dockerfile
+    container_name: cadence
+    restart: unless-stopped
+    env_file:
+      - .env
+    environment:
+      TZ: America/Toronto
+      NAVIDROME_URL: ${NAVIDROME_URL:-http://navidrome:4533}
+      CADENCE_DATA_DIR: /data
+      CADENCE_MUSIC_DIR: /music
+      CADENCE_PROVIDER: ${CADENCE_PROVIDER:-preview}
+    volumes:
+      - ./server/data:/data
+      - ${HOST_MUSIC_DIR:-./music}:/music
+    ports:
+      - "4545:4545"
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:4545/health', timeout=3)"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 10s

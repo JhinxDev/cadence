@@ -1,0 +1,49 @@
+name: iOS Simulator Qualification
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - 'ios/**'
+      - 'scripts/qualify-ios.sh'
+      - '.github/workflows/ios-simulator.yml'
+  pull_request:
+    paths:
+      - 'ios/**'
+      - 'scripts/qualify-ios.sh'
+      - '.github/workflows/ios-simulator.yml'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: cadence-ios-sim-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  ios-simulator:
+    runs-on: macos-15
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+      - name: Select Xcode
+        run: |
+          if [ -d "/Applications/Xcode_26.3.app/Contents/Developer" ]; then
+            sudo xcode-select -s /Applications/Xcode_26.3.app/Contents/Developer
+          fi
+          xcodebuild -version
+      - name: Ensure XcodeGen
+        run: |
+          if ! command -v xcodegen >/dev/null 2>&1; then
+            brew install xcodegen
+          fi
+      - name: Run CadenceCore tests and iPhone Simulator UI snapshots
+        run: bash scripts/qualify-ios.sh "$RUNNER_TEMP/cadence-ios-evidence"
+      - name: Upload iOS Simulator evidence & screenshots
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: cadence-ios-evidence
+          path: ${{ runner.temp }}/cadence-ios-evidence/
+          retention-days: 7

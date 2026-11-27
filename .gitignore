@@ -1,0 +1,29 @@
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+.pytest_cache/
+.ruff_cache/
+*.egg-info/
+dist/
+build/
+
+# Secrets & local data
+.env
+*.p8
+*.p12
+*.mobileprovision
+*.ipa
+*.xcarchive
+server/data/
+
+# Xcode / Swift
+.DS_Store
+DerivedData/
+.swiftpm/
+*.xcuserdata
+*.xcresult
+ios/Cadence.xcodeproj/
+!ios/Cadence.xcodeproj/project.pbxproj
+ios/.build/
+cadence-ios-evidence/

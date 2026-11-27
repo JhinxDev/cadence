@@ -1,0 +1,60 @@
+name: Cadence
+options:
+  bundleIdPrefix: dev.jhinx
+  deploymentTarget:
+    iOS: "17.0"
+  xcodeVersion: "16.0"
+
+packages:
+  CadenceCore:
+    path: CadenceCore
+
+settings:
+  base:
+    SWIFT_VERSION: "5.10"
+    MARKETING_VERSION: "0.1.0"
+    CURRENT_PROJECT_VERSION: "${CADENCE_IOS_BUILD_NUMBER:-1}"
+    DEVELOPMENT_TEAM: "${DEVELOPMENT_TEAM:-}"
+    CODE_SIGN_STYLE: Automatic
+    INFOPLIST_KEY_UIApplicationSceneManifest_Generation: YES
+
+targets:
+  Cadence:
+    type: application
+    platform: iOS
+    sources:
+      - path: Cadence
+    dependencies:
+      - package: CadenceCore
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: dev.jhinx.cadence
+        PRODUCT_NAME: Cadence
+        INFOPLIST_FILE: Cadence/Info.plist
+        ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
+        GENERATE_INFOPLIST_FILE: NO
+        SUPPORTS_MAC_DESIGNED_FOR_IPHONE_IPAD: NO
+        TARGETED_DEVICE_FAMILY: "1"
+
+  CadenceUITests:
+    type: bundle.ui-testing
+    platform: iOS
+    sources:
+      - path: CadenceUITests
+    dependencies:
+      - target: Cadence
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: dev.jhinx.cadence.uitests
+        GENERATE_INFOPLIST_FILE: YES
+        TEST_TARGET_NAME: Cadence
+
+schemes:
+  Cadence:
+    build:
+      targets:
+        Cadence: all
+        CadenceUITests: [test]
+    test:
+      targets:
+        - CadenceUITests
