@@ -10,6 +10,11 @@ on:
         options:
           - upload
           - export-only
+      prune_stale_certs:
+        description: Revoke older ephemeral API Development certs before/after build
+        type: boolean
+        required: false
+        default: false
       build_number:
         description: Optional CFBundleVersion override
         type: string
@@ -20,7 +25,7 @@ permissions:
   contents: read
 
 concurrency:
-  group: cadence-testflight
+  group: cadence-testflight-signing
   cancel-in-progress: false
 
 jobs:
@@ -28,12 +33,12 @@ jobs:
     runs-on: macos-15
     timeout-minutes: 25
     steps:
-      - uses: actions/checkout@v4
       - name: Select Xcode
         run: |
           if [ -d "/Applications/Xcode_26.3.app/Contents/Developer" ]; then
             sudo xcode-select -s /Applications/Xcode_26.3.app/Contents/Developer
           fi
+          xcodebuild -version
       - name: Ensure XcodeGen
         run: |
           if ! command -v xcodegen >/dev/null 2>&1; then
@@ -52,28 +57,40 @@ jobs:
               exit 1
             fi
           done
-      - name: Archive and upload Cadence to TestFlight
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: Archive, sign and publish Cadence
         env:
           APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
           ASC_KEY_ID: ${{ secrets.ASC_KEY_ID }}
           ASC_ISSUER_ID: ${{ secrets.ASC_ISSUER_ID }}
           ASC_KEY_P8_BASE64: ${{ secrets.ASC_KEY_P8_BASE64 }}
           CADENCE_DEFAULT_SERVER_URL: ${{ secrets.CADENCE_DEFAULT_SERVER_URL }}
-          TF_MODE: ${{ inputs.mode }}
-          TF_BUILD: ${{ inputs.build_number }}
+          TESTFLIGHT_MODE: ${{ inputs.mode }}
+          TESTFLIGHT_PRUNE_STALE: ${{ inputs.prune_stale_certs }}
+          TESTFLIGHT_BUILD_NUMBER: ${{ inputs.build_number }}
         run: |
-          args=(--output "$RUNNER_TEMP/cadence-testflight")
-          if [ "$TF_MODE" = "export-only" ]; then
+          args=(--output "$RUNNER_TEMP/cadence-ios-testflight")
+          if [ "${TESTFLIGHT_MODE}" = "export-only" ]; then
             args+=(--export-only)
           fi
-          if [ -n "$TF_BUILD" ]; then
-            args+=(--build-number "$TF_BUILD")
+          if [ "${TESTFLIGHT_PRUNE_STALE}" = "true" ]; then
+            args+=(--prune-stale-api-dev-certs)
+          fi
+          if [ -n "${TESTFLIGHT_BUILD_NUMBER}" ]; then
+            args+=(--build-number "${TESTFLIGHT_BUILD_NUMBER}")
           fi
           bash scripts/deploy-testflight-ios.sh "${args[@]}"
-      - name: Upload TestFlight receipt
+      - name: Clean temporary build files
+        if: always()
+        run: rm -rf -- "$RUNNER_TEMP"/cadence-ios-testflight.* || true
+      - name: Upload TestFlight receipt and export artifacts
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: cadence-testflight-${{ github.sha }}
-          path: ${{ runner.temp }}/cadence-testflight/
+          name: cadence-ios-testflight-${{ github.sha }}
+          path: ${{ runner.temp }}/cadence-ios-testflight/
+          if-no-files-found: warn
           retention-days: 7
+          compression-level: 0
