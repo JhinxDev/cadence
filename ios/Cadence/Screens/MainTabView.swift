@@ -54,8 +54,8 @@ struct MainTabView: View {
                 MiniPlayerBar(track: current) {
                     appState.isNowPlayingPresented = true
                 }
-                .padding(.horizontal, 12)
-                .padding(.bottom, 56)
+                .padding(.horizontal, 14)
+                .padding(.bottom, 72)
                 .transition(.move(edge: .bottom).combined(with: .opacity))
             }
 
@@ -67,7 +67,7 @@ struct MainTabView: View {
                     .padding(.vertical, 10)
                     .background(CadencePalette.surfaceElevated.opacity(0.96), in: Capsule())
                     .overlay(Capsule().stroke(CadencePalette.surfaceStroke, lineWidth: 1))
-                    .padding(.bottom, appState.player.queue.currentTrack == nil ? 74 : 132)
+                    .padding(.bottom, appState.player.queue.currentTrack == nil ? 86 : 146)
                     .transition(.opacity)
             }
         }

@@ -10,6 +10,7 @@ enum NowPlayingDrawerTab: String, CaseIterable {
 
 struct NowPlayingView: View {
     @Environment(AppState.self) private var appState
+    @Environment(\.dismiss) private var dismiss
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var drawerTab: NowPlayingDrawerTab = .upNext
     @State private var lyrics: LyricsResult?
@@ -22,24 +23,45 @@ struct NowPlayingView: View {
         ZStack {
             AmbientObsidianBackdrop(tint: track?.inLibrary == false ? CadencePalette.accentDiscovery : CadencePalette.accentPrimary)
 
-            VStack(spacing: 16) {
+            VStack(spacing: 12) {
+                HStack {
+                    Button {
+                        dismiss()
+                    } label: {
+                        Image(systemName: "chevron.down")
+                            .font(.system(size: 16, weight: .bold))
+                            .foregroundStyle(CadencePalette.inkSecondary)
+                            .frame(width: 40, height: 32)
+                    }
+                    .accessibilityLabel("Minimize player")
+                    Spacer()
+                    Text(appState.player.queue.isRadioActive ? "CADENCE RADIO" : "NOW PLAYING")
+                        .font(.system(size: 11, weight: .bold))
+                        .tracking(1.2)
+                        .foregroundStyle(CadencePalette.inkSecondary)
+                    Spacer()
+                    Color.clear.frame(width: 40, height: 32)
+                }
+                .padding(.horizontal, 16)
+                .padding(.top, 10)
+
                 if let track {
                     ScrollView {
-                        VStack(spacing: 18) {
+                        VStack(spacing: 16) {
                             ArtworkView(
                                 url: appState.artworkURL(for: track.artworkURL),
                                 title: track.title,
                                 subtitle: track.artist,
                                 cornerRadius: 20
                             )
-                            .frame(width: 280, height: 280)
+                            .frame(width: 248, height: 248)
                             .shadow(color: CadencePalette.accentPrimary.opacity(0.28), radius: 28, y: 14)
                             .scaleEffect(appState.player.isPlaying ? 1.0 : 0.94)
                             .animation(
                                 reduceMotion ? .easeInOut(duration: 0.15) : .spring(response: 0.38, dampingFraction: 0.8),
                                 value: appState.player.isPlaying
                             )
-                            .padding(.top, 16)
+                            .padding(.top, 4)
 
                             // Title + Artist + Save / Like bar
                             HStack(alignment: .center, spacing: 12) {
@@ -105,25 +127,40 @@ struct NowPlayingView: View {
                             }
 
                             // Scrubber
-                            VStack(spacing: 6) {
+                            VStack(spacing: 8) {
                                 let total = max(appState.player.duration, 1)
                                 let value = isDraggingScrubber ? scrubPosition : appState.player.currentTime
-                                Slider(
-                                    value: Binding(
-                                        get: { min(value, total) },
-                                        set: { newVal in
-                                            scrubPosition = newVal
-                                        }
-                                    ),
-                                    in: 0...total,
-                                    onEditingChanged: { editing in
-                                        isDraggingScrubber = editing
-                                        if !editing {
-                                            appState.player.seek(to: scrubPosition)
-                                        }
+                                GeometryReader { geo in
+                                    let ratio = min(max(value / total, 0), 1)
+                                    ZStack(alignment: .leading) {
+                                        Capsule()
+                                            .fill(Color.white.opacity(0.16))
+                                            .frame(height: 4)
+                                        Capsule()
+                                            .fill(CadencePalette.inkPrimary)
+                                            .frame(width: max(4, geo.size.width * ratio), height: 4)
+                                        Circle()
+                                            .fill(CadencePalette.inkPrimary)
+                                            .frame(width: isDraggingScrubber ? 14 : 10, height: isDraggingScrubber ? 14 : 10)
+                                            .offset(x: max(0, min(geo.size.width - 10, geo.size.width * ratio - 5)))
                                     }
-                                )
-                                .tint(CadencePalette.inkPrimary)
+                                    .frame(height: 24)
+                                    .contentShape(Rectangle())
+                                    .gesture(
+                                        DragGesture(minimumDistance: 0)
+                                            .onChanged { drag in
+                                                isDraggingScrubber = true
+                                                let pct = min(max(drag.location.x / max(geo.size.width, 1), 0), 1)
+                                                scrubPosition = pct * total
+                                            }
+                                            .onEnded { drag in
+                                                let pct = min(max(drag.location.x / max(geo.size.width, 1), 0), 1)
+                                                isDraggingScrubber = false
+                                                appState.player.seek(to: pct * total)
+                                            }
+                                    )
+                                }
+                                .frame(height: 24)
 
                                 HStack {
                                     Text(formatSeconds(value))

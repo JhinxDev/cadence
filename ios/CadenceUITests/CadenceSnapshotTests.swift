@@ -50,8 +50,13 @@ final class CadenceSnapshotTests: XCTestCase {
         if app.buttons["Lyrics"].waitForExistence(timeout: 5) {
             capture("04-now-playing")
             app.buttons["Lyrics"].tap()
+            app.swipeUp()
             capture("05-now-playing-lyrics")
-            app.swipeDown()
+            if app.buttons["Minimize player"].waitForExistence(timeout: 3) {
+                app.buttons["Minimize player"].tap()
+            } else {
+                app.swipeDown()
+            }
         }
 
         // 5. Mixes & Radio tab
