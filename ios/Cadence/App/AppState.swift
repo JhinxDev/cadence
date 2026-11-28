@@ -27,6 +27,8 @@ public final class AppState {
     public var artists: [ArtistCard] = []
     public var starredTracks: [Track] = []
     public var downloadedRecords: [CachedTrackRecord] = []
+    public var isLoadingLibrary: Bool = false
+    public var libraryError: String?
 
     public var savingTrackIds: Set<String> = []
     public var activeToast: String?
@@ -63,7 +65,7 @@ public final class AppState {
         account = DemoCatalog.demoAccount
         capabilities = ServerCapabilities(
             service: "cadence",
-            version: "0.1.0",
+            version: "0.1.1",
             discoveryEnabled: true,
             fullDiscoveryStreaming: true,
             saveToLibraryEnabled: true,
@@ -194,15 +196,51 @@ public final class AppState {
         guard let account else { return }
         downloadedRecords = await cacheManager.allDownloaded()
         if account.isDemo { return }
-        async let pl = subsonicClient.fetchPlaylists(account: account)
-        async let al = subsonicClient.fetchAlbums(account: account, type: "alphabeticalByName", size: 60)
-        async let ar = subsonicClient.fetchArtists(account: account)
-        async let st = subsonicClient.fetchStarredTracks(account: account)
+        isLoadingLibrary = true
+        libraryError = nil
+        defer { isLoadingLibrary = false }
 
-        playlists = (try? await pl) ?? playlists
-        albums = (try? await al) ?? albums
-        artists = (try? await ar) ?? artists
-        starredTracks = (try? await st) ?? starredTracks
+        var firstError: Error?
+        var succeededCount = 0
+
+        await withTaskGroup(of: Void.self) { group in
+            group.addTask { @MainActor in
+                do {
+                    self.playlists = try await self.subsonicClient.fetchPlaylists(account: account)
+                    succeededCount += 1
+                } catch {
+                    firstError = firstError ?? error
+                }
+            }
+            group.addTask { @MainActor in
+                do {
+                    self.albums = try await self.subsonicClient.fetchAlbums(account: account, type: "alphabeticalByName", size: 60)
+                    succeededCount += 1
+                } catch {
+                    firstError = firstError ?? error
+                }
+            }
+            group.addTask { @MainActor in
+                do {
+                    self.artists = try await self.subsonicClient.fetchArtists(account: account)
+                    succeededCount += 1
+                } catch {
+                    firstError = firstError ?? error
+                }
+            }
+            group.addTask { @MainActor in
+                do {
+                    self.starredTracks = try await self.subsonicClient.fetchStarredTracks(account: account)
+                    succeededCount += 1
+                } catch {
+                    firstError = firstError ?? error
+                }
+            }
+        }
+
+        if succeededCount == 0, let firstError {
+            libraryError = firstError.localizedDescription
+        }
     }
 
     public func playTrackAndStartRadio(_ track: Track, mode: RadioMode? = nil) async {
@@ -215,12 +253,40 @@ public final class AppState {
         }
         player.play(tracks: [track], startAt: 0, radioSessionId: nil, radioMode: activeMode)
         if let batch = try? await apiClient.startRadio(account: account, seedTrack: track, mode: activeMode) {
+            if player.queue.currentTrack?.id == track.id {
+                player.queue.attachRadio(sessionId: batch.sessionId, mode: batch.mode, upcomingTracks: batch.tracks)
+                player.prefetchUpcoming(limit: 3)
+            } else {
+                player.play(
+                    tracks: [track] + batch.tracks,
+                    startAt: 0,
+                    radioSessionId: batch.sessionId,
+                    radioMode: batch.mode
+                )
+            }
+        }
+    }
+
+    public func startMoodRadio(mood: String, mode: RadioMode? = nil) async {
+        let activeMode = mode ?? preferredRadioMode
+        guard let account else { return }
+        if account.isDemo || !capabilities.discoveryEnabled || account.bearerToken == nil {
             player.play(
-                tracks: [track] + batch.tracks,
+                tracks: DemoCatalog.discoveryTracks + DemoCatalog.libraryTracks,
                 startAt: 0,
-                radioSessionId: batch.sessionId,
-                radioMode: batch.mode
+                radioSessionId: "demo-mood",
+                radioMode: activeMode
             )
+            return
+        }
+        let targetMood = mood == "Discover" ? nil : mood
+        if let batch = try? await apiClient.startRadio(account: account, seedTrack: nil, seedArtist: nil, mood: targetMood, mode: activeMode),
+           !batch.tracks.isEmpty {
+            player.play(tracks: batch.tracks, startAt: 0, radioSessionId: batch.sessionId, radioMode: batch.mode)
+            return
+        }
+        if let first = homeFeed?.quickPicks.first {
+            await playTrackAndStartRadio(first, mode: activeMode)
         }
     }
 
@@ -251,6 +317,7 @@ public final class AppState {
             return
         }
         player.queue.replaceUpcoming(with: batch.tracks, mode: mode)
+        player.prefetchUpcoming(limit: 3)
     }
 
     public func appendMoreRadio() async {
@@ -258,6 +325,7 @@ public final class AppState {
         if account.isDemo { return }
         if let batch = try? await apiClient.nextRadio(account: account, sessionId: sessionId, mode: player.queue.radioMode) {
             player.queue.appendRadioTracks(batch.tracks)
+            player.prefetchUpcoming(limit: 3)
         }
     }
 

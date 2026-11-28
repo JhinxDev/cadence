@@ -17,8 +17,9 @@ async def proxy_subsonic(subpath: str, request: Request) -> Response:
     headers = {
         k: v
         for k, v in request.headers.items()
-        if k.lower() not in {"host", "connection", "content-length"}
+        if k.lower() not in {"host", "connection", "content-length", "accept-encoding"}
     }
+    headers["accept-encoding"] = "identity"
     body = await request.body()
 
     client = httpx.AsyncClient(timeout=30.0, follow_redirects=True)
@@ -31,11 +32,10 @@ async def proxy_subsonic(subpath: str, request: Request) -> Response:
     )
     upstream = await client.send(req, stream=True)
 
-    resp_headers = {
-        k: v
-        for k, v in upstream.headers.items()
-        if k.lower() not in {"transfer-encoding", "connection"}
-    }
+    excluded = {"transfer-encoding", "connection", "keep-alive", "content-encoding"}
+    if "content-encoding" in upstream.headers:
+        excluded.add("content-length")
+    resp_headers = {k: v for k, v in upstream.headers.items() if k.lower() not in excluded}
 
     async def stream_body() -> AsyncIterator[bytes]:
         try:

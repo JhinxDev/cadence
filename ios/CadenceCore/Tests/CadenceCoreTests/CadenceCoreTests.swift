@@ -72,4 +72,31 @@ final class CadenceCoreTests: XCTestCase {
         let resolved = client.resolveURL(account: acct, rawPathOrURL: "/api/v1/artwork/cov-1")
         XCTAssertEqual(resolved?.absoluteString, "https://cadence.example.com/api/v1/artwork/cov-1?token=tok123")
     }
+
+    func testQueueEngineAttachRadioAndShuffle() {
+        var queue = QueueEngine()
+        queue.load(tracks: [DemoCatalog.libraryTracks[0]], startAt: 0)
+        queue.attachRadio(sessionId: "rad-2", mode: .discover, upcomingTracks: DemoCatalog.libraryTracks)
+        XCTAssertEqual(queue.radioSessionId, "rad-2")
+        XCTAssertEqual(queue.currentTrack?.id, "demo-lib-1")
+        XCTAssertFalse(queue.upNextTracks.contains { $0.id == "demo-lib-1" })
+
+        queue.toggleShuffle()
+        XCTAssertTrue(queue.isShuffled)
+        XCTAssertEqual(queue.currentTrack?.id, "demo-lib-1")
+    }
+
+    func testSearchSuggestionsDecoding() throws {
+        let json = """
+        {
+          "query": "Zaho",
+          "suggestions": ["Zaho", "Zaho - Iceberg"],
+          "top_tracks": [],
+          "top_artists": []
+        }
+        """
+        let decoded = try JSONDecoder().decode(SearchSuggestions.self, from: Data(json.utf8))
+        XCTAssertEqual(decoded.query, "Zaho")
+        XCTAssertEqual(decoded.suggestions, ["Zaho", "Zaho - Iceberg"])
+    }
 }

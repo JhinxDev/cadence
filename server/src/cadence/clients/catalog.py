@@ -124,6 +124,31 @@ class ExternalCatalogClient:
                 return row
         return data["data"][0]
 
+    async def search_artists(self, query: str, limit: int = 4) -> list[ArtistCardDTO]:
+        data = await self._get_json(
+            f"{self.DEEZER_BASE}/search/artist",
+            {"q": query, "limit": limit},
+        )
+        if not data or not data.get("data"):
+            return []
+        cards: list[ArtistCardDTO] = []
+        for row in data["data"]:
+            if not row.get("id") or not row.get("name"):
+                continue
+            cards.append(
+                ArtistCardDTO(
+                    id=make_ext_id("deezer-artist", row["id"]),
+                    name=row["name"],
+                    reason="Artist · Tap for radio",
+                    artwork_url=row.get("picture_xl")
+                    or row.get("picture_big")
+                    or row.get("picture_medium"),
+                    in_library=False,
+                    seed_artist=row["name"],
+                )
+            )
+        return cards
+
     async def get_related_artists(self, artist_name: str, limit: int = 8) -> list[ArtistCardDTO]:
         artist = await self.find_artist(artist_name)
         if not artist:

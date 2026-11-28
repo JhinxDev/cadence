@@ -159,6 +159,18 @@ class FakeNavidromeClient(NavidromeClient):
 
 
 class FakeCatalogClient(ExternalCatalogClient):
+    async def search_artists(self, query: str, limit: int = 4) -> list[ArtistCardDTO]:
+        return [
+            ArtistCardDTO(
+                id="ext:deezer-artist:500",
+                name="Zaho",
+                reason="Artist · Tap for radio",
+                artwork_url="https://cdn.example/zaho.jpg",
+                in_library=False,
+                seed_artist="Zaho",
+            )
+        ]
+
     async def get_related_artists(self, artist_name: str, limit: int = 8) -> list[ArtistCardDTO]:
         return [
             ArtistCardDTO(

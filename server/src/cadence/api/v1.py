@@ -1,5 +1,6 @@
 """Core /api/v1 REST routes for the Cadence iOS client."""
 
+import asyncio
 from collections.abc import AsyncIterator
 from pathlib import Path
 
@@ -24,14 +25,17 @@ from cadence.models import (
     LyricsLineDTO,
     LyricsResponse,
     MixDetailResponse,
+    PrefetchRequest,
     RadioNextRequest,
     RadioResponse,
     RadioStartRequest,
     SaveTrackRequest,
     SaveTrackResponse,
     SearchResponse,
+    SearchSuggestResponse,
     StarTrackRequest,
     StarTrackResponse,
+    TrackDTO,
 )
 from cadence.providers.base import AudioProvider
 
@@ -103,6 +107,15 @@ async def login(
     )
 
 
+def _schedule_provider_prefetch(
+    provider: AudioProvider, tracks: list[TrackDTO], limit: int = 3
+) -> int:
+    sched = getattr(provider, "schedule_prefetch", None)
+    if callable(sched):
+        return int(sched(tracks, limit=limit))
+    return 0
+
+
 @router.get("/home", response_model=HomeFeedResponse)
 async def get_home(
     request: Request,
@@ -110,7 +123,13 @@ async def get_home(
     session: UserSession = Depends(require_session),
 ) -> HomeFeedResponse:
     engine = _get_engine(request)
-    return await engine.build_home(session.username, session.password, mood=mood)
+    feed = await engine.build_home(session.username, session.password, mood=mood)
+    _schedule_provider_prefetch(
+        _get_provider(request),
+        [t for t in feed.quick_picks if not t.in_library],
+        limit=2,
+    )
+    return feed
 
 
 @router.get("/mixes/{mix_id}", response_model=MixDetailResponse)
@@ -121,7 +140,13 @@ async def get_mix(
     session: UserSession = Depends(require_session),
 ) -> MixDetailResponse:
     engine = _get_engine(request)
-    return await engine.build_mix(session.username, session.password, mix_id=mix_id, mood=mood)
+    detail = await engine.build_mix(session.username, session.password, mix_id=mix_id, mood=mood)
+    _schedule_provider_prefetch(
+        _get_provider(request),
+        [t for t in detail.tracks if not t.in_library],
+        limit=3,
+    )
+    return detail
 
 
 @router.post("/radio/start", response_model=RadioResponse)
@@ -131,7 +156,7 @@ async def start_radio(
     session: UserSession = Depends(require_session),
 ) -> RadioResponse:
     engine = _get_engine(request)
-    return await engine.start_radio(
+    batch = await engine.start_radio(
         username=session.username,
         password=session.password,
         seed_track=payload.seed_track,
@@ -140,6 +165,12 @@ async def start_radio(
         mode=payload.mode,
         count=payload.count,
     )
+    _schedule_provider_prefetch(
+        _get_provider(request),
+        [t for t in batch.tracks if not t.in_library],
+        limit=3,
+    )
+    return batch
 
 
 @router.post("/radio/next", response_model=RadioResponse)
@@ -149,12 +180,102 @@ async def next_radio(
     session: UserSession = Depends(require_session),
 ) -> RadioResponse:
     engine = _get_engine(request)
-    return await engine.next_radio(
+    batch = await engine.next_radio(
         username=session.username,
         password=session.password,
         session_id=payload.session_id,
         mode_override=payload.mode,
         count=payload.count,
+    )
+    _schedule_provider_prefetch(
+        _get_provider(request),
+        [t for t in batch.tracks if not t.in_library],
+        limit=3,
+    )
+    return batch
+
+
+@router.post("/stream/prefetch")
+async def prefetch_streams(
+    payload: PrefetchRequest,
+    request: Request,
+    session: UserSession = Depends(require_session),
+) -> dict[str, int]:
+    _ = session
+    db = _get_db(request)
+    provider = _get_provider(request)
+    tracks: list[TrackDTO] = []
+    for tid in payload.track_ids:
+        if not tid.startswith("ext:"):
+            continue
+        track = await db.get_discovery_track(tid)
+        if track is not None:
+            tracks.append(track)
+    queued = _schedule_provider_prefetch(provider, tracks, limit=3)
+    return {"queued": queued}
+
+
+@router.get("/search/suggest", response_model=SearchSuggestResponse)
+async def search_suggest(
+    request: Request,
+    q: str = Query(min_length=1, max_length=120),
+    session: UserSession = Depends(require_session),
+) -> SearchSuggestResponse:
+    navidrome = _get_navidrome(request)
+    catalog = _get_catalog(request)
+    db = _get_db(request)
+
+    nav_res, ext_tracks_res, ext_artists_res, profile_res = await asyncio.gather(
+        navidrome.search(session.username, session.password, q, song_count=5, album_count=3),
+        catalog.search_tracks(q, limit=6),
+        catalog.search_artists(q, limit=4),
+        build_taste_profile(navidrome, session.username, session.password),
+        return_exceptions=True,
+    )
+
+    res = nav_res if isinstance(nav_res, dict) else {}
+    lib_tracks = [navidrome.song_to_dto(s) for s in res.get("song", [])]
+    library_keys = profile_res.library_keys if not isinstance(profile_res, BaseException) else set()
+    ext_raw = ext_tracks_res if isinstance(ext_tracks_res, list) else []
+    disc_tracks = [t for t in ext_raw if normalize_key(t.artist, t.title) not in library_keys]
+    if disc_tracks:
+        await db.upsert_discovery_tracks(disc_tracks)
+
+    top_artists = ext_artists_res if isinstance(ext_artists_res, list) else []
+
+    seen_suggestions: set[str] = set()
+    suggestions: list[str] = []
+
+    def add_suggestion(candidate: str) -> None:
+        cleaned = " ".join(candidate.split()).strip()
+        key = cleaned.lower()
+        if cleaned and key not in seen_suggestions and len(suggestions) < 6:
+            seen_suggestions.add(key)
+            suggestions.append(cleaned)
+
+    for artist in top_artists:
+        add_suggestion(artist.name)
+    for track in lib_tracks[:3]:
+        add_suggestion(f"{track.artist} - {track.title}")
+    for track in disc_tracks[:4]:
+        add_suggestion(f"{track.artist} - {track.title}")
+
+    combined_tracks: list = []
+    seen_track_keys: set[str] = set()
+    for track in [*lib_tracks, *disc_tracks]:
+        tk = normalize_key(track.artist, track.title)
+        if tk in seen_track_keys:
+            continue
+        seen_track_keys.add(tk)
+        combined_tracks.append(track)
+        if len(combined_tracks) >= 5:
+            break
+
+    return SearchSuggestResponse(
+        query=q,
+        suggestions=suggestions[:6],
+        top_tracks=combined_tracks,
+        top_artists=top_artists[:4],
     )
 
 
@@ -168,25 +289,47 @@ async def unified_search(
     catalog = _get_catalog(request)
     db = _get_db(request)
 
-    res = await navidrome.search(
-        session.username, session.password, q, song_count=15, album_count=8
+    (
+        res_raw,
+        profile_res,
+        ext_raw_res,
+        exact_artists_res,
+        related_artists_res,
+    ) = await asyncio.gather(
+        navidrome.search(session.username, session.password, q, song_count=15, album_count=8),
+        build_taste_profile(navidrome, session.username, session.password),
+        catalog.search_tracks(q, limit=15),
+        catalog.search_artists(q, limit=4),
+        catalog.get_related_artists(q, limit=6),
+        return_exceptions=True,
     )
+
+    res = res_raw if isinstance(res_raw, dict) else {}
     lib_tracks = [navidrome.song_to_dto(s) for s in res.get("song", [])]
     lib_albums = [navidrome.album_to_dto(a) for a in res.get("album", [])]
 
-    profile = await build_taste_profile(navidrome, session.username, session.password)
-    ext_raw = await catalog.search_tracks(q, limit=15)
-    disc_tracks = [
-        t for t in ext_raw if normalize_key(t.artist, t.title) not in profile.library_keys
-    ]
+    library_keys = profile_res.library_keys if not isinstance(profile_res, BaseException) else set()
+    ext_raw = ext_raw_res if isinstance(ext_raw_res, list) else []
+    disc_tracks = [t for t in ext_raw if normalize_key(t.artist, t.title) not in library_keys]
     await db.upsert_discovery_tracks(disc_tracks)
-    artists = await catalog.get_related_artists(q, limit=6)
+
+    artists = []
+    seen_artist_names: set[str] = set()
+    for artist in [
+        *(exact_artists_res if isinstance(exact_artists_res, list) else []),
+        *(related_artists_res if isinstance(related_artists_res, list) else []),
+    ]:
+        key = artist.name.strip().lower()
+        if key and key not in seen_artist_names:
+            seen_artist_names.add(key)
+            artists.append(artist)
+
     return SearchResponse(
         query=q,
         library_tracks=lib_tracks,
         discovery_tracks=disc_tracks,
         library_albums=lib_albums,
-        artists=artists,
+        artists=artists[:8],
     )
 
 

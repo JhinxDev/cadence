@@ -135,6 +135,13 @@ class SearchResponse(BaseModel):
     artists: list[ArtistCardDTO]
 
 
+class SearchSuggestResponse(BaseModel):
+    query: str
+    suggestions: list[str]
+    top_tracks: list[TrackDTO]
+    top_artists: list[ArtistCardDTO]
+
+
 class LyricsLineDTO(BaseModel):
     time_ms: int | None = None
     text: str
@@ -171,3 +178,7 @@ class StarTrackResponse(BaseModel):
     track_id: str
     starred: bool
     saved_navidrome_id: str | None = None
+
+
+class PrefetchRequest(BaseModel):
+    track_ids: list[str] = Field(default_factory=list, max_length=10)

@@ -363,6 +363,31 @@ public struct SearchResults: Codable, Sendable {
     }
 }
 
+public struct SearchSuggestions: Codable, Sendable {
+    public let query: String
+    public let suggestions: [String]
+    public let topTracks: [Track]
+    public let topArtists: [ArtistCard]
+
+    enum CodingKeys: String, CodingKey {
+        case query, suggestions
+        case topTracks = "top_tracks"
+        case topArtists = "top_artists"
+    }
+
+    public init(
+        query: String,
+        suggestions: [String],
+        topTracks: [Track] = [],
+        topArtists: [ArtistCard] = []
+    ) {
+        self.query = query
+        self.suggestions = suggestions
+        self.topTracks = topTracks
+        self.topArtists = topArtists
+    }
+}
+
 public struct LyricsLine: Identifiable, Codable, Hashable, Sendable {
     public var id: String { "\(timeMs ?? -1)-\(text)" }
     public let timeMs: Int?

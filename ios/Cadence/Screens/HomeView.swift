@@ -144,28 +144,27 @@ struct HomeView: View {
                     Button {
                         Task { await openSpeedDial(item) }
                     } label: {
-                        ZStack(alignment: .bottomLeading) {
-                            ArtworkView(
-                                url: appState.artworkURL(for: item.artworkURL),
-                                title: item.title,
-                                subtitle: item.subtitle,
-                                cornerRadius: 12
-                            )
-                            .aspectRatio(1, contentMode: .fit)
-
+                        ArtworkView(
+                            url: appState.artworkURL(for: item.artworkURL),
+                            title: item.title,
+                            subtitle: item.subtitle,
+                            cornerRadius: 12
+                        )
+                        .overlay(alignment: .bottomLeading) {
                             LinearGradient(
-                                colors: [.clear, Color.black.opacity(0.82)],
+                                colors: [.clear, Color.black.opacity(0.84)],
                                 startPoint: .center,
                                 endPoint: .bottom
                             )
-                            .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
-
-                            Text(item.title)
-                                .font(.system(size: 12, weight: .bold))
-                                .foregroundStyle(.white)
-                                .lineLimit(2)
-                                .padding(8)
+                            .overlay(alignment: .bottomLeading) {
+                                Text(item.title)
+                                    .font(.system(size: 12, weight: .bold))
+                                    .foregroundStyle(.white)
+                                    .lineLimit(2)
+                                    .padding(8)
+                            }
                         }
+                        .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
                     }
                     .buttonStyle(.plain)
                 }
@@ -224,8 +223,13 @@ struct HomeView: View {
                         NavigationLink {
                             MixDetailView(mix: mix)
                         } label: {
-                            VStack(alignment: .leading, spacing: 8) {
+                            VStack(alignment: .leading, spacing: 6) {
                                 MixCollageArtwork(mix: mix, size: 164)
+                                Text(mix.title)
+                                    .font(.system(size: 15, weight: .bold))
+                                    .foregroundStyle(CadencePalette.inkPrimary)
+                                    .lineLimit(1)
+                                    .frame(width: 164, alignment: .leading)
                                 Text(mix.subtitle)
                                     .font(.system(size: 12))
                                     .foregroundStyle(CadencePalette.inkSecondary)

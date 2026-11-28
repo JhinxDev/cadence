@@ -81,11 +81,7 @@ struct ExploreRadioView: View {
 
                         Button {
                             Task {
-                                if let first = appState.homeFeed?.quickPicks.first {
-                                    await appState.playTrackAndStartRadio(first, mode: selectedMode)
-                                } else {
-                                    await appState.startArtistRadio(appState.homeFeed?.recommendedArtists.first?.name ?? "Zaho", mode: selectedMode)
-                                }
+                                await appState.startMoodRadio(mood: seedMood, mode: selectedMode)
                                 appState.isNowPlayingPresented = true
                             }
                         } label: {

@@ -74,6 +74,8 @@ struct NowPlayingView: View {
                                         if !track.inLibrary {
                                             Text("DISCOVERY")
                                                 .font(.system(size: 10, weight: .bold))
+                                                .fixedSize(horizontal: true, vertical: false)
+                                                .layoutPriority(1)
                                                 .padding(.horizontal, 7)
                                                 .padding(.vertical, 3)
                                                 .background(CadencePalette.accentDiscovery.opacity(0.28), in: Capsule())
@@ -175,7 +177,7 @@ struct NowPlayingView: View {
                             // Transport Controls
                             HStack(spacing: 26) {
                                 Button {
-                                    appState.player.queue.isShuffled.toggle()
+                                    appState.player.queue.toggleShuffle()
                                 } label: {
                                     Image(systemName: "shuffle")
                                         .font(.system(size: 18, weight: .semibold))
@@ -197,9 +199,19 @@ struct NowPlayingView: View {
                                 Button {
                                     appState.player.togglePlayPause()
                                 } label: {
-                                    Image(systemName: appState.player.isPlaying ? "pause.circle.fill" : "play.circle.fill")
-                                        .font(.system(size: 64))
-                                        .foregroundStyle(CadencePalette.inkPrimary)
+                                    if appState.player.isBuffering {
+                                        ZStack {
+                                            Circle()
+                                                .fill(CadencePalette.inkPrimary)
+                                                .frame(width: 64, height: 64)
+                                            ProgressView()
+                                                .tint(CadencePalette.canvasBase)
+                                        }
+                                    } else {
+                                        Image(systemName: appState.player.isPlaying ? "pause.circle.fill" : "play.circle.fill")
+                                            .font(.system(size: 64))
+                                            .foregroundStyle(CadencePalette.inkPrimary)
+                                    }
                                 }
                                 .accessibilityLabel(appState.player.isPlaying ? "Pause" : "Play")
 

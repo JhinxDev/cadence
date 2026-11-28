@@ -104,6 +104,8 @@ struct MiniPlayerBar: View {
                         if !track.inLibrary {
                             Text("NEW")
                                 .font(.system(size: 9, weight: .bold))
+                                .fixedSize(horizontal: true, vertical: false)
+                                .layoutPriority(1)
                                 .padding(.horizontal, 5)
                                 .padding(.vertical, 1)
                                 .background(CadencePalette.accentDiscovery.opacity(0.28), in: Capsule())
@@ -134,10 +136,16 @@ struct MiniPlayerBar: View {
                 Button {
                     appState.player.togglePlayPause()
                 } label: {
-                    Image(systemName: appState.player.isPlaying ? "pause.fill" : "play.fill")
-                        .font(.system(size: 18, weight: .bold))
-                        .foregroundStyle(CadencePalette.inkPrimary)
-                        .frame(width: 36, height: 36)
+                    if appState.player.isBuffering {
+                        ProgressView()
+                            .tint(.white)
+                            .frame(width: 36, height: 36)
+                    } else {
+                        Image(systemName: appState.player.isPlaying ? "pause.fill" : "play.fill")
+                            .font(.system(size: 18, weight: .bold))
+                            .foregroundStyle(CadencePalette.inkPrimary)
+                            .frame(width: 36, height: 36)
+                    }
                 }
                 .buttonStyle(.plain)
                 .accessibilityLabel(appState.player.isPlaying ? "Pause" : "Play")

@@ -152,6 +152,27 @@ public final class CadenceAPIClient: Sendable {
         return try await get(account: account, path: "/api/v1/search?q=\(q)")
     }
 
+    public func searchSuggest(account: UserAccount, query: String) async throws -> SearchSuggestions {
+        let q = query.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? query
+        return try await get(account: account, path: "/api/v1/search/suggest?q=\(q)")
+    }
+
+    public func prefetchStreams(account: UserAccount, trackIds: [String]) async {
+        let extIds = Array(trackIds.filter { $0.hasPrefix("ext:") }.prefix(6))
+        guard !extIds.isEmpty, !account.isDemo, account.bearerToken != nil else { return }
+        struct Payload: Encodable {
+            let track_ids: [String]
+        }
+        struct PrefetchAck: Decodable {
+            let queued: Int
+        }
+        let _: PrefetchAck? = try? await post(
+            account: account,
+            path: "/api/v1/stream/prefetch",
+            body: Payload(track_ids: extIds)
+        )
+    }
+
     public func fetchLyrics(account: UserAccount, track: Track) async throws -> LyricsResult {
         let artist = track.artist.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? track.artist
         let title = track.title.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? track.title

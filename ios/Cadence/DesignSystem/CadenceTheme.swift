@@ -70,25 +70,29 @@ struct ArtworkView: View {
     var accent: Color = CadencePalette.accentPrimary
 
     var body: some View {
-        ZStack {
-            if let url {
-                AsyncImage(url: url) { phase in
-                    switch phase {
-                    case .success(let image):
-                        image.resizable().scaledToFill()
-                    default:
-                        fallbackArt
+        Color.clear
+            .aspectRatio(1, contentMode: .fit)
+            .overlay {
+                ZStack {
+                    fallbackArt
+                    if let url {
+                        AsyncImage(url: url, transaction: Transaction(animation: .easeIn(duration: 0.16))) { phase in
+                            if case .success(let image) = phase {
+                                image
+                                    .resizable()
+                                    .scaledToFill()
+                            }
+                        }
                     }
                 }
-            } else {
-                fallbackArt
             }
-        }
-        .clipShape(RoundedRectangle(cornerRadius: cornerRadius, style: .continuous))
-        .overlay(
-            RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
-                .stroke(CadencePalette.surfaceStroke, lineWidth: 1)
-        )
+            .clipped()
+            .clipShape(RoundedRectangle(cornerRadius: cornerRadius, style: .continuous))
+            .overlay(
+                RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
+                    .stroke(CadencePalette.surfaceStroke, lineWidth: 1)
+            )
+            .contentShape(RoundedRectangle(cornerRadius: cornerRadius, style: .continuous))
     }
 
     private var fallbackArt: some View {
@@ -119,19 +123,21 @@ struct MixCollageArtwork: View {
     @Environment(AppState.self) private var appState
     let mix: MixCard
     var size: CGFloat = 160
+    var showsTitleOverlay: Bool = false
 
     var body: some View {
         let accent = Color(hex: mix.accentHex)
+        let tileSize = max(1, (size - 2) / 2)
         ZStack(alignment: .bottomLeading) {
             if mix.artworkURLs.count >= 4 {
                 VStack(spacing: 2) {
                     HStack(spacing: 2) {
-                        tile(mix.artworkURLs[0], accent: accent)
-                        tile(mix.artworkURLs[1], accent: accent)
+                        tile(mix.artworkURLs[0], accent: accent, tileSize: tileSize)
+                        tile(mix.artworkURLs[1], accent: accent, tileSize: tileSize)
                     }
                     HStack(spacing: 2) {
-                        tile(mix.artworkURLs[2], accent: accent)
-                        tile(mix.artworkURLs[3], accent: accent)
+                        tile(mix.artworkURLs[2], accent: accent, tileSize: tileSize)
+                        tile(mix.artworkURLs[3], accent: accent, tileSize: tileSize)
                     }
                 }
             } else {
@@ -140,36 +146,29 @@ struct MixCollageArtwork: View {
                     startPoint: .topLeading,
                     endPoint: .bottomTrailing
                 )
-                .overlay(alignment: .topTrailing) {
+                .overlay(alignment: .center) {
                     Image(systemName: "sparkles")
-                        .font(.system(size: size * 0.24, weight: .semibold))
-                        .foregroundStyle(.white.opacity(0.22))
-                        .padding(14)
+                        .font(.system(size: size * 0.26, weight: .semibold))
+                        .foregroundStyle(.white.opacity(0.28))
                 }
             }
 
-            LinearGradient(
-                colors: [.clear, Color.black.opacity(0.78)],
-                startPoint: .center,
-                endPoint: .bottom
-            )
+            if showsTitleOverlay {
+                LinearGradient(
+                    colors: [.clear, Color.black.opacity(0.76)],
+                    startPoint: .center,
+                    endPoint: .bottom
+                )
 
-            VStack(alignment: .leading, spacing: 4) {
-                Text(mix.badge)
-                    .font(.system(size: 10, weight: .bold))
-                    .tracking(1.0)
-                    .padding(.horizontal, 7)
-                    .padding(.vertical, 3)
-                    .background(accent.opacity(0.92), in: Capsule())
-                    .foregroundStyle(.white)
                 Text(mix.title)
-                    .font(.system(size: 16, weight: .bold))
+                    .font(.system(size: 15, weight: .bold))
                     .foregroundStyle(CadencePalette.inkPrimary)
                     .lineLimit(2)
+                    .padding(12)
             }
-            .padding(12)
         }
         .frame(width: size, height: size)
+        .clipped()
         .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
         .overlay(
             RoundedRectangle(cornerRadius: 16, style: .continuous)
@@ -177,7 +176,7 @@ struct MixCollageArtwork: View {
         )
     }
 
-    private func tile(_ raw: String, accent: Color) -> some View {
+    private func tile(_ raw: String, accent: Color, tileSize: CGFloat) -> some View {
         ArtworkView(
             url: appState.artworkURL(for: raw),
             title: mix.title,
@@ -185,6 +184,7 @@ struct MixCollageArtwork: View {
             cornerRadius: 0,
             accent: accent
         )
+        .frame(width: tileSize, height: tileSize)
     }
 }
 
@@ -215,6 +215,8 @@ struct TrackRowView: View {
                             if !track.inLibrary {
                                 Text("NEW")
                                     .font(.system(size: 9, weight: .bold))
+                                    .fixedSize(horizontal: true, vertical: false)
+                                    .layoutPriority(1)
                                     .padding(.horizontal, 5)
                                     .padding(.vertical, 2)
                                     .background(CadencePalette.accentDiscovery.opacity(0.26), in: Capsule())

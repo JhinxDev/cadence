@@ -46,6 +46,29 @@ public struct QueueEngine: Sendable {
         tracks.append(contentsOf: fresh)
     }
 
+    public mutating func attachRadio(sessionId: String, mode: RadioMode, upcomingTracks: [Track]) {
+        guard !tracks.isEmpty else {
+            load(tracks: upcomingTracks, startAt: 0, radioSessionId: sessionId, radioMode: mode)
+            return
+        }
+        let head = Array(tracks.prefix(currentIndex + 1))
+        let seen = Set(head.map(\.id))
+        let fresh = upcomingTracks.filter { !seen.contains($0.id) }
+        tracks = head + fresh
+        self.radioSessionId = sessionId
+        self.isRadioActive = true
+        self.radioMode = mode
+    }
+
+    public mutating func toggleShuffle() {
+        isShuffled.toggle()
+        if isShuffled, currentIndex + 1 < tracks.count {
+            let head = Array(tracks.prefix(currentIndex + 1))
+            let tail = Array(tracks[(currentIndex + 1)...]).shuffled()
+            tracks = head + tail
+        }
+    }
+
     public mutating func replaceUpcoming(with more: [Track], mode: RadioMode) {
         guard !tracks.isEmpty else {
             load(tracks: more, radioSessionId: radioSessionId, radioMode: mode)

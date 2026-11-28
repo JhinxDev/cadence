@@ -26,7 +26,12 @@ class CommandAudioProvider:
         self.cache_dir = cache_dir
         self.max_cache_mb = max_cache_mb
         self._fallback = PreviewAudioProvider()
+        self._inflight: dict[str, asyncio.Task[ResolvedAudio]] = {}
+        self._prefetch_sem = asyncio.Semaphore(3)
         self.cache_dir.mkdir(parents=True, exist_ok=True)
+
+    def is_cached(self, ext_id: str) -> bool:
+        return self._cached_candidate(ext_id) is not None
 
     def _cached_candidate(self, ext_id: str) -> Path | None:
         safe = ext_id.replace(":", "_")
@@ -76,6 +81,17 @@ class CommandAudioProvider:
             source_label=data.get("source_label", "command"),
         )
 
+    async def _resolve_uncached(self, track: TrackDTO) -> ResolvedAudio:
+        safe = track.id.replace(":", "_")
+        try:
+            resolved = await self._invoke("resolve", track, self.cache_dir / safe)
+            enforce_cache_limit(self.cache_dir, self.max_cache_mb)
+            return resolved
+        except Exception:
+            if track.preview_url:
+                return await self._fallback.resolve_stream(track)
+            raise
+
     async def resolve_stream(self, track: TrackDTO) -> ResolvedAudio:
         cached = self._cached_candidate(track.id)
         if cached is not None:
@@ -92,15 +108,57 @@ class CommandAudioProvider:
                 source_label="cache",
             )
 
-        safe = track.id.replace(":", "_")
+        existing = self._inflight.get(track.id)
+        if existing is not None:
+            return await asyncio.shield(existing)
+
+        task = asyncio.create_task(self._resolve_uncached(track))
+        self._inflight[track.id] = task
         try:
-            resolved = await self._invoke("resolve", track, self.cache_dir / safe)
-            enforce_cache_limit(self.cache_dir, self.max_cache_mb)
-            return resolved
-        except Exception:
-            if track.preview_url:
-                return await self._fallback.resolve_stream(track)
-            raise
+            return await asyncio.shield(task)
+        finally:
+            if self._inflight.get(track.id) is task and task.done():
+                self._inflight.pop(track.id, None)
+
+    def schedule_prefetch(self, tracks: list[TrackDTO], limit: int = 3) -> int:
+        queued = 0
+        for track in tracks:
+            if queued >= limit:
+                break
+            if not track.id.startswith("ext:") or track.navidrome_id:
+                continue
+            if self.is_cached(track.id) or track.id in self._inflight:
+                continue
+
+            async def _warm(item: TrackDTO = track) -> ResolvedAudio:
+                async with self._prefetch_sem:
+                    cached = self._cached_candidate(item.id)
+                    if cached is not None:
+                        mime = (
+                            "audio/flac"
+                            if cached.suffix == ".flac"
+                            else ("audio/mpeg" if cached.suffix == ".mp3" else "audio/mp4")
+                        )
+                        return ResolvedAudio(
+                            file_path=cached,
+                            mime_type=mime,
+                            is_preview=False,
+                            source_label="cache",
+                        )
+                    return await self._resolve_uncached(item)
+
+            task = asyncio.create_task(_warm())
+            self._inflight[track.id] = task
+
+            def _cleanup(done_task: asyncio.Task[ResolvedAudio], tid: str = track.id) -> None:
+                if self._inflight.get(tid) is done_task:
+                    self._inflight.pop(tid, None)
+                if not done_task.cancelled():
+                    _ = done_task.exception()
+
+            task.add_done_callback(_cleanup)
+            queued += 1
+        return queued
 
     async def acquire_for_library(self, track: TrackDTO, target_dir: Path) -> ResolvedAudio:
         target_dir.mkdir(parents=True, exist_ok=True)

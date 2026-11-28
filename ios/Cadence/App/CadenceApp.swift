@@ -5,6 +5,14 @@ import CadenceCore
 struct CadenceApp: App {
     @State private var appState = AppState()
 
+    init() {
+        URLCache.shared = URLCache(
+            memoryCapacity: 60 * 1024 * 1024,
+            diskCapacity: 200 * 1024 * 1024,
+            diskPath: "cadence-urlcache"
+        )
+    }
+
     var body: some Scene {
         WindowGroup {
             Group {
