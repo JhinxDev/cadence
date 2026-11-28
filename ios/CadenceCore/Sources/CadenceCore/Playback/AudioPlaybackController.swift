@@ -257,7 +257,9 @@ public final class AudioPlaybackController {
             let created = AVPlayer(playerItem: item)
             created.automaticallyWaitsToMinimizeStalling = true
             created.allowsExternalPlayback = true
+            #if os(iOS)
             created.usesExternalPlaybackWhileExternalScreenIsActive = false
+            #endif
             player = created
             attachPlayerStatusObserver(created)
         } else {
